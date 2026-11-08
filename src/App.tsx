@@ -5,6 +5,8 @@ type Language = 'en' | 'ta'
 type SaveState = { kind: 'idle' | 'loading' | 'success' | 'demo' | 'error'; message: string }
 type RSVP = { name: string; attending: 'yes' | 'no'; guests: number; createdAt: string }
 type Wish = { name: string; message: string; createdAt: string }
+type PublicWish = Wish & { row: number }
+type PublicWishPage = { ok: boolean; wishes: PublicWish[]; nextCursor: number | null }
 type Report = { rsvps: RSVP[]; wishes: Wish[] }
 
 const date = new Date('2026-12-13T10:00:00+05:30')
@@ -27,6 +29,7 @@ const content = {
     yourName: 'Your name', placeholderName: 'Enter your name', attending: 'Can you make it?', yes: "Joyfully accepting", no: 'Sending love from afar', guestCount: 'Number of guests (including you)', submitRSVP: 'Send RSVP',
     wishEyebrow: 'A NOTE FROM THE HEART', wishTitle: 'Leave a blessing', wishSub: 'A few heartfelt words for the mommy-to-be and the little one.',
     wishLabel: 'Your wishes', wishPlaceholder: 'Write your blessings here…', sendWish: 'Send wishes',
+    wishPublicNotice: 'Your name and wish will be visible to everyone who opens this invitation.',
     closing: "Let's shower the mom-to-be with love, laughter and blessings.", closingSub: 'Your presence will make our day even more special.',
     share: 'Share invite', copy: 'Copy link', copied: 'Link copied!', footer: 'Made with love', demo: 'Preview mode: saved on this device only. Connect the database for live RSVPs and wishes.',
     navInvite: 'Invite', navVenue: 'Venue', navRSVP: 'RSVP', navWishes: 'Wishes', reportTitle: 'Guest responses', reportCaption: 'Private read-only report', noReports: 'No responses yet.', home: 'View invitation', reportError: 'This report link is invalid or not configured.',
@@ -42,6 +45,7 @@ const content = {
     yourName: 'உங்கள் பெயர்', placeholderName: 'பெயரை உள்ளிடுங்கள்', attending: 'கலந்து கொள்ள முடியுமா?', yes: 'நிச்சயம் வருகிறேன்', no: 'தொலைவிலிருந்தே வாழ்த்துகிறேன்', guestCount: 'உங்களையும் சேர்த்து வருபவர்கள்', submitRSVP: 'வருகையைப் பதிவு செய்க',
     wishEyebrow: 'மனமார்ந்த வாழ்த்துகள்', wishTitle: 'ஆசீர்வாதம் வழங்குங்கள்', wishSub: 'வரவிருக்கும் குட்டிக்கும் அம்மாவுக்கும் உங்கள் வாழ்த்துகளை எழுதுங்கள்.',
     wishLabel: 'உங்கள் வாழ்த்துகள்', wishPlaceholder: 'உங்கள் அன்பான வாழ்த்துகள்…', sendWish: 'வாழ்த்துகளை அனுப்புக',
+    wishPublicNotice: 'உங்கள் பெயரும் வாழ்த்தும் இந்த அழைப்பிதழைத் திறக்கும் அனைவருக்கும் தெரியும்.',
     closing: 'அன்பாலும் மகிழ்ச்சியாலும் அம்மாவை வாழ்த்துவோம்.', closingSub: 'உங்கள் வருகை இந்நாளை மேலும் சிறப்பாக்கும்.',
     share: 'பகிருங்கள்', copy: 'இணைப்பை நகலெடு', copied: 'இணைப்பு நகலெடுக்கப்பட்டது!', footer: 'அன்புடன் உருவாக்கியது', demo: 'டெமோ: இந்தச் சாதனத்தில் மட்டும் சேமிக்கப்படும். நேரடி பதிவுகளுக்கு database இணைக்கவும்.',
     navInvite: 'அழைப்பு', navVenue: 'இடம்', navRSVP: 'வருகை', navWishes: 'வாழ்த்து', reportTitle: 'வருகை மற்றும் வாழ்த்துகள்', reportCaption: 'பார்க்க மட்டும் அனுமதி உள்ள அறிக்கை', noReports: 'இன்னும் பதிவுகள் இல்லை.', home: 'அழைப்பிதழைப் பார்க்க', reportError: 'இந்த அறிக்கை இணைப்பு செல்லுபடியாகவில்லை.',
@@ -120,6 +124,116 @@ async function sendForm(endpoint: 'rsvp' | 'wishes', data: object): Promise<Save
   }
 }
 
+
+/**
+ * Public Wishes Wall. Fetches only guest name, wish text and submitted date.
+ * RSVP responses and Sheet submission IDs are NEVER returned publicly.
+ * Data is sourced from Google Sheets via the server-only /api/public-wishes gateway.
+ */
+function WishesWall({ lang, active, refreshKey }: { lang: Language; active: boolean; refreshKey: number }) {
+  const [wishes, setWishes] = useState<PublicWish[]>([])
+  const [nextCursor, setNextCursor] = useState<number | null>(null)
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [paginationStarted, setPaginationStarted] = useState(false)
+  const [refreshRequest, setRefreshRequest] = useState(0)
+  const text = lang === 'ta' ? {
+    eyebrow: 'அன்புடன் பகிர்ந்த வாழ்த்துகள்', title: 'வாழ்த்துகளின் சுவர்',
+    subtitle: 'முன்பு பகிரப்பட்ட ஆசீர்வாதங்களை அனைவரும் இங்கே காணலாம்.',
+    empty: 'முதல் வாழ்த்தை நீங்களே பகிருங்கள்! 💚',
+    loading: 'வாழ்த்துகளை ஏற்றுகிறது…', error: 'வாழ்த்துகளை இப்போது காட்ட முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    older: 'பழைய வாழ்த்துகளையும் பார்க்க', retry: 'மீண்டும் முயற்சிக்க',
+    refresh: 'புதுப்பிக்க', more: 'இன்னும் ஏற்றுகிறது…'
+  } : {
+    eyebrow: 'HEARTFELT BLESSINGS', title: 'Wishes from Loved Ones',
+    subtitle: 'Every blessing stays here for friends and family to read.',
+    empty: 'Be the first to leave a beautiful wish! 💚',
+    loading: 'Loading blessings…', error: 'Wishes are temporarily unavailable. Please try again.',
+    older: 'Load earlier wishes', retry: 'Try again',
+    refresh: 'Refresh', more: 'Loading more…'
+  }
+
+  useEffect(() => {
+    if (!active) return
+    let canceled = false
+    const load = async () => {
+      try {
+        const response = await fetch('/api/public-wishes?limit=40', { cache: 'no-store' })
+        if (!response.ok) throw new Error('Wishes unavailable')
+        const data = await response.json() as PublicWishPage
+        if (!data.ok || !Array.isArray(data.wishes)) throw new Error('Invalid response')
+        if (canceled) return
+        setWishes((previous) => {
+          const freshIds = new Set(data.wishes.map((item) => item.row))
+          return [...data.wishes, ...previous.filter((item) => !freshIds.has(item.row))]
+        })
+        if (!paginationStarted) setNextCursor(data.nextCursor)
+        setPhase('ready')
+      } catch {
+        if (!canceled) setPhase((existing) => existing === 'ready' ? 'ready' : 'error')
+      }
+    }
+    void load()
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load()
+    }, 45000)
+    return () => { canceled = true; window.clearInterval(interval) }
+  }, [active, refreshKey, refreshRequest, paginationStarted])
+
+  const loadOlder = async () => {
+    if (nextCursor === null || loadingOlder) return
+    setPaginationStarted(true)
+    setLoadingOlder(true)
+    try {
+      const response = await fetch(`/api/public-wishes?limit=40&cursor=${nextCursor}`, { cache: 'no-store' })
+      if (!response.ok) throw new Error('Could not load earlier wishes')
+      const data = await response.json() as PublicWishPage
+      if (!data.ok || !Array.isArray(data.wishes)) throw new Error('Invalid response')
+      setWishes((previous) => {
+        const existing = new Set(previous.map((w) => w.row))
+        return [...previous, ...data.wishes.filter((w) => !existing.has(w.row))]
+      })
+      setNextCursor(data.nextCursor)
+    } catch {
+      // Retain already-loaded wishes; the visitor can try the button again.
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+  const latest = wishes.slice(0, 8)
+  return <section className="wishes-wall" aria-label={text.title}>
+    <div className="wishes-wall-container">
+      <div className="wishes-wall-heading">
+        <span className="section-kicker">{text.eyebrow}</span>
+        <h2><Heart size={29} aria-hidden="true"/> {text.title}</h2>
+        <p>{text.subtitle}</p>
+      </div>
+      {phase === 'loading' ? <p className="wishes-wall-info" role="status">{text.loading}</p> :
+        phase === 'error' ? <div className="wishes-wall-info" role="status"><p>{text.error}</p><button type="button" onClick={() => setRefreshRequest((x) => x + 1)}>{text.retry}</button></div> :
+        wishes.length === 0 ? <p className="wishes-wall-info">{text.empty}</p> : <>
+          <div className="wishes-marquee-viewport" aria-label="Recently shared wishes">
+            <div className={`wishes-marquee-track ${latest.length > 1 ? 'is-animated' : ''}`}>
+              {(latest.length > 1 ? [0, 1] : [0]).map((copy) => <div className="wishes-marquee-group" aria-hidden={copy === 1} key={copy}>
+                {latest.map((w) => <div className="wishes-marquee-card" key={`${copy}-${w.row}`}>
+                  <span aria-hidden="true" className="wishes-marquee-heart">♡</span>
+                  <p>{w.message}</p><strong>— {w.name}</strong>
+                </div>)}
+              </div>)}
+            </div>
+          </div>
+          <div className="wishes-wall-archive" aria-label="Previous wishes">
+            {wishes.map((w) => <article className="wishes-archive-card" key={w.row}>
+              <span className="wishes-avatar" aria-hidden="true">♡</span>
+              <div><strong>{w.name}</strong><p>{w.message}</p><small>{w.createdAt.slice(0, 10)}</small></div>
+            </article>)}
+          </div>
+          {nextCursor !== null && <button type="button" className="wishes-more-btn" onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? text.more : text.older}</button>}
+        </>}
+      <button type="button" className="wishes-refresh-btn" onClick={() => setRefreshRequest((x) => x + 1)}>{text.refresh}</button>
+    </div>
+  </section>
+}
+
 function ReportView({ share, lang, setLang }: { share: string; lang: Language; setLang: (lang: Language) => void }) {
   const [result, setResult] = useState<Report | null>(null)
   const [error, setError] = useState(false)
@@ -158,6 +272,7 @@ export default function App() {
   const [wish, setWish] = useState({ name: '', message: '', honeypot: '' })
   const [rsvpState, setRSVPState] = useState<SaveState>(ready)
   const [wishState, setWishState] = useState<SaveState>(ready)
+  const [wishRefreshKey, setWishRefreshKey] = useState(0)
   const t = content[lang]
   const x = extras[lang]
   const shareToken = new URLSearchParams(window.location.search).get('report')
@@ -206,7 +321,10 @@ export default function App() {
     setWishState({ kind: 'loading', message: '' })
     const response = await sendForm('wishes', wish)
     setWishState(response)
-    if (response.kind === 'success' || response.kind === 'demo') setWish({ name: '', message: '', honeypot: '' })
+    if (response.kind === 'success' || response.kind === 'demo') {
+      setWish({ name: '', message: '', honeypot: '' })
+      setWishRefreshKey((v) => v + 1)
+    }
   }
 
   return <div className={`site ${lang === 'ta' ? 'tamil' : ''}`}>
@@ -285,8 +403,9 @@ export default function App() {
         </section>
         <div className="forms-wrap">
           <section id="rsvp" className="form-section rsvp-section"><div className="form-heading"><span className="section-kicker">{t.attendanceEyebrow}</span><h2>{t.attendanceTitle}</h2><p>{t.attendanceSub}</p><span className="rsvp-hint">{x.rsvpHint}</span></div><form onSubmit={submitRSVP} className="event-form"><label>{t.yourName}<input autoComplete="name" minLength={2} maxLength={70} required value={rsvp.name} placeholder={t.placeholderName} onChange={(e) => setRSVP({ ...rsvp, name: e.target.value })}/></label><span className="field-label">{t.attending}</span><div className="choice-row"><label className={`choice ${rsvp.attending==='yes'?'selected':''}`}><input type="radio" name="attending" checked={rsvp.attending === 'yes'} onChange={() => setRSVP({ ...rsvp, attending: 'yes' })}/><Check size={17}/>{t.yes}</label><label className={`choice ${rsvp.attending==='no'?'selected':''}`}><input type="radio" name="attending" checked={rsvp.attending === 'no'} onChange={() => setRSVP({ ...rsvp, attending: 'no' })}/><Heart size={17}/>{t.no}</label></div>{rsvp.attending === 'yes' && <label>{t.guestCount}<select value={rsvp.guests} onChange={(e) => setRSVP({ ...rsvp, guests: e.target.value })}>{Array.from({length:10},(_,i) => <option value={i+1} key={i+1}>{i+1}</option>)}</select></label>}<div className="honeypot"><label>Leave blank<input tabIndex={-1} autoComplete="off" value={rsvp.honeypot} onChange={(e) => setRSVP({ ...rsvp, honeypot: e.target.value })}/></label></div><button type="submit" className="form-submit" disabled={rsvpState.kind==='loading'}>{rsvpState.kind==='loading'?'Sending…':t.submitRSVP}<Send size={16}/></button>{rsvpState.kind!=='idle' && <p role="status" className={`form-status ${rsvpState.kind}`}>{rsvpState.message}</p>}</form></section>
-          <section id="wishes" className="form-section wishes-section"><div className="form-heading"><span className="section-kicker">{t.wishEyebrow}</span><h2>{t.wishTitle}</h2><p>{t.wishSub}</p></div><form onSubmit={submitWish} className="event-form"><label>{t.yourName}<input autoComplete="name" minLength={2} maxLength={70} required value={wish.name} placeholder={t.placeholderName} onChange={(e) => setWish({ ...wish, name: e.target.value })}/></label><label>{t.wishLabel}<textarea maxLength={600} minLength={3} required rows={4} placeholder={t.wishPlaceholder} value={wish.message} onChange={(e) => setWish({ ...wish, message: e.target.value })}/></label><div className="honeypot"><label>Leave blank<input tabIndex={-1} autoComplete="off" value={wish.honeypot} onChange={(e) => setWish({ ...wish, honeypot: e.target.value })}/></label></div><button type="submit" className="form-submit" disabled={wishState.kind==='loading'}>{wishState.kind==='loading'?'Sending…':t.sendWish}<MessageCircleHeart size={17}/></button>{wishState.kind!=='idle' && <p role="status" className={`form-status ${wishState.kind}`}>{wishState.message}</p>}</form></section>
+          <section id="wishes" className="form-section wishes-section"><div className="form-heading"><span className="section-kicker">{t.wishEyebrow}</span><h2>{t.wishTitle}</h2><p>{t.wishSub}</p></div><form onSubmit={submitWish} className="event-form"><label>{t.yourName}<input autoComplete="name" minLength={2} maxLength={70} required value={wish.name} placeholder={t.placeholderName} onChange={(e) => setWish({ ...wish, name: e.target.value })}/></label><label>{t.wishLabel}<textarea maxLength={600} minLength={3} required rows={4} placeholder={t.wishPlaceholder} value={wish.message} onChange={(e) => setWish({ ...wish, message: e.target.value })}/></label><div className="honeypot"><label>Leave blank<input tabIndex={-1} autoComplete="off" value={wish.honeypot} onChange={(e) => setWish({ ...wish, honeypot: e.target.value })}/></label></div><p className="wishes-public-notice">{t.wishPublicNotice}</p><button type="submit" className="form-submit" disabled={wishState.kind==='loading'}>{wishState.kind==='loading'?'Sending…':t.sendWish}<MessageCircleHeart size={17}/></button>{wishState.kind!=='idle' && <p role="status" className={`form-status ${wishState.kind}`}>{wishState.message}</p>}</form></section>
         </div>
+        <WishesWall lang={lang} active={opened} refreshKey={wishRefreshKey}/>
         <section className="closing-section"><Lotus/><h2>With love, blessings<br/>& a little magic…</h2><p>{t.closingSub}</p><div className="closing-actions"><button className="share-btn" onClick={share}><Share2 size={17}/>{t.share}</button><button className="share-btn outline" onClick={copy}>{copySuccess?<Check size={17}/>:<Copy size={17}/>} {copySuccess?t.copied:t.copy}</button></div><div className="closing-info"><span><CalendarDays size={15}/>13 DEC 2026</span><span>Surya ♡ Subi</span></div></section>
       </main>
       <footer className="footer srinuma-footer">
