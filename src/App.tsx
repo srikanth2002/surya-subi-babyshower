@@ -135,72 +135,102 @@ function WishesWall({ lang, active, refreshKey }: { lang: Language; active: bool
   const [nextCursor, setNextCursor] = useState<number | null>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const [loadingOlder, setLoadingOlder] = useState(false)
-  const [paginationStarted, setPaginationStarted] = useState(false)
   const [refreshRequest, setRefreshRequest] = useState(0)
+  const pagesToShow = useRef(1)
   const text = lang === 'ta' ? {
     eyebrow: 'அன்புடன் பகிர்ந்த வாழ்த்துகள்', title: 'வாழ்த்துகளின் சுவர்',
-    subtitle: 'முன்பு பகிரப்பட்ட ஆசீர்வாதங்களை அனைவரும் இங்கே காணலாம்.',
+    subtitle: 'Google Sheet-ல் உள்ள வாழ்த்துகள் மட்டுமே இங்கே காண்பிக்கப்படும்.',
     empty: 'முதல் வாழ்த்தை நீங்களே பகிருங்கள்! 💚',
     loading: 'வாழ்த்துகளை ஏற்றுகிறது…', error: 'வாழ்த்துகளை இப்போது காட்ட முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
     older: 'பழைய வாழ்த்துகளையும் பார்க்க', retry: 'மீண்டும் முயற்சிக்க',
     refresh: 'புதுப்பிக்க', more: 'இன்னும் ஏற்றுகிறது…'
   } : {
     eyebrow: 'HEARTFELT BLESSINGS', title: 'Wishes from Loved Ones',
-    subtitle: 'Every blessing stays here for friends and family to read.',
+    subtitle: 'Only wishes currently saved in the guestbook are shown here.',
     empty: 'Be the first to leave a beautiful wish! 💚',
     loading: 'Loading blessings…', error: 'Wishes are temporarily unavailable. Please try again.',
     older: 'Load earlier wishes', retry: 'Try again',
     refresh: 'Refresh', more: 'Loading more…'
   }
 
+  // The Google Sheet is the single source of truth. Every refresh REPLACES all
+  // previously displayed items; removed rows must never be merged back in.
   useEffect(() => {
     if (!active) return
-    let canceled = false
+    const controller = new AbortController()
+    let busy = false
     const load = async () => {
+      if (busy || controller.signal.aborted) return
+      busy = true
       try {
-        const response = await fetch('/api/public-wishes?limit=40', { cache: 'no-store' })
-        if (!response.ok) throw new Error('Wishes unavailable')
-        const data = await response.json() as PublicWishPage
-        if (!data.ok || !Array.isArray(data.wishes)) throw new Error('Invalid response')
-        if (canceled) return
-        setWishes((previous) => {
-          const freshIds = new Set(data.wishes.map((item) => item.row))
-          return [...data.wishes, ...previous.filter((item) => !freshIds.has(item.row))]
-        })
-        if (!paginationStarted) setNextCursor(data.nextCursor)
+        const all: PublicWish[] = []
+        let cursor: number | null = null
+        for (let page = 0; page < pagesToShow.current; page++) {
+          const query = new URLSearchParams({ limit: '40', t: String(Date.now()) })
+          if (cursor !== null) query.set('cursor', String(cursor))
+          const response = await fetch(`/api/public-wishes?${query}`, {
+            signal: controller.signal, cache: 'no-store'
+          })
+          if (!response.ok) throw new Error('Wishes unavailable')
+          const data = await response.json() as PublicWishPage
+          if (!data.ok || !Array.isArray(data.wishes)) throw new Error('Invalid response')
+          all.push(...data.wishes)
+          cursor = data.nextCursor
+          if (cursor === null) break
+        }
+        if (controller.signal.aborted) return
+        // Defensive deduplication if the same guest row is accidentally fetched twice.
+        const byRow = new Map<number, PublicWish>()
+        for (const wish of all) byRow.set(wish.row, wish)
+        setWishes(Array.from(byRow.values()))
+        setNextCursor(cursor)
         setPhase('ready')
       } catch {
-        if (!canceled) setPhase((existing) => existing === 'ready' ? 'ready' : 'error')
+        if (!controller.signal.aborted) {
+          // Never display old cached wishes when the current Sheet cannot be read.
+          setWishes([])
+          setNextCursor(null)
+          setPhase('error')
+        }
+      } finally {
+        busy = false
       }
     }
     void load()
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') void load()
-    }, 45000)
-    return () => { canceled = true; window.clearInterval(interval) }
-  }, [active, refreshKey, refreshRequest, paginationStarted])
+    }, 15000)
+    const onFocus = () => { void load() }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      controller.abort()
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [active, refreshKey, refreshRequest])
 
   const loadOlder = async () => {
     if (nextCursor === null || loadingOlder) return
-    setPaginationStarted(true)
     setLoadingOlder(true)
     try {
-      const response = await fetch(`/api/public-wishes?limit=40&cursor=${nextCursor}`, { cache: 'no-store' })
+      const response = await fetch(`/api/public-wishes?limit=40&cursor=${nextCursor}&t=${Date.now()}`, { cache: 'no-store' })
       if (!response.ok) throw new Error('Could not load earlier wishes')
       const data = await response.json() as PublicWishPage
       if (!data.ok || !Array.isArray(data.wishes)) throw new Error('Invalid response')
-      setWishes((previous) => {
-        const existing = new Set(previous.map((w) => w.row))
-        return [...previous, ...data.wishes.filter((w) => !existing.has(w.row))]
-      })
-      setNextCursor(data.nextCursor)
+      pagesToShow.current = Math.min(pagesToShow.current + 1, 25)
+      // Re-read authoritative Sheet pages, so deletions are reflected even after pagination.
+      setRefreshRequest((count) => count + 1)
     } catch {
-      // Retain already-loaded wishes; the visitor can try the button again.
+      setRefreshRequest((count) => count + 1)
     } finally {
       setLoadingOlder(false)
     }
   }
-  const latest = wishes.slice(0, 8)
   return <section className="wishes-wall" aria-label={text.title}>
     <div className="wishes-wall-container">
       <div className="wishes-wall-heading">
@@ -211,21 +241,13 @@ function WishesWall({ lang, active, refreshKey }: { lang: Language; active: bool
       {phase === 'loading' ? <p className="wishes-wall-info" role="status">{text.loading}</p> :
         phase === 'error' ? <div className="wishes-wall-info" role="status"><p>{text.error}</p><button type="button" onClick={() => setRefreshRequest((x) => x + 1)}>{text.retry}</button></div> :
         wishes.length === 0 ? <p className="wishes-wall-info">{text.empty}</p> : <>
-          <div className="wishes-marquee-viewport" aria-label="Recently shared wishes">
-            <div className={`wishes-marquee-track ${latest.length > 1 ? 'is-animated' : ''}`}>
-              {(latest.length > 1 ? [0, 1] : [0]).map((copy) => <div className="wishes-marquee-group" aria-hidden={copy === 1} key={copy}>
-                {latest.map((w) => <div className="wishes-marquee-card" key={`${copy}-${w.row}`}>
-                  <span aria-hidden="true" className="wishes-marquee-heart">♡</span>
-                  <p>{w.message}</p><strong>— {w.name}</strong>
-                </div>)}
-              </div>)}
+          <div className="wishes-marquee-viewport" aria-label="Wishes currently in the Google Sheet">
+            <div className={`wishes-marquee-track ${wishes.length > 1 ? 'is-animated' : ''}`}>
+              {wishes.map((w) => <article className="wishes-marquee-card" key={w.row}>
+                <span aria-hidden="true" className="wishes-marquee-heart">♡</span>
+                <p>{w.message}</p><strong>— {w.name}</strong>
+              </article>)}
             </div>
-          </div>
-          <div className="wishes-wall-archive" aria-label="Previous wishes">
-            {wishes.map((w) => <article className="wishes-archive-card" key={w.row}>
-              <span className="wishes-avatar" aria-hidden="true">♡</span>
-              <div><strong>{w.name}</strong><p>{w.message}</p><small>{w.createdAt.slice(0, 10)}</small></div>
-            </article>)}
           </div>
           {nextCursor !== null && <button type="button" className="wishes-more-btn" onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? text.more : text.older}</button>}
         </>}

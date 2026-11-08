@@ -11,7 +11,9 @@ const clamp = (value: unknown, low: number, high: number, fallback: number) => {
 }
 export default async function handler(req: Req, res: Res) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=8, stale-while-revalidate=8')
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  res.setHeader('Pragma', 'no-cache')
+  res.setHeader('Expires', '0')
   res.setHeader('X-Content-Type-Options', 'nosniff')
   if (req.method !== 'GET') return res.status(405).json({ok: false, error: 'Method not allowed'})
   const url = process.env.SHEETS_WEBHOOK_URL
@@ -27,7 +29,7 @@ export default async function handler(req: Req, res: Res) {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       body: JSON.stringify({kind: 'publicWishes', secret, limit, cursor}),
-      redirect: 'follow', signal: ctl.signal
+      redirect: 'follow', cache: 'no-store', signal: ctl.signal
     })
     if (!response.ok) throw new Error('Apps Script response error')
     const json = await response.json() as { ok?: boolean; wishes?: RawWish[]; nextCursor?: unknown }
