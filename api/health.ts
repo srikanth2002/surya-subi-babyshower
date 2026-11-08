@@ -1,0 +1,1 @@
+export default function handler(req: { method?: string }, res: { status: (s:number) => {json: (b:unknown)=>void } }) { return res.status(200).json({ status:'ok', version:'v12', forms:'google-sheets' }) }

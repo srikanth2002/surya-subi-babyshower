@@ -1,0 +1,19 @@
+{
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/surya-subi-babyshower",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share-surya-subi",
+      "destination": "/index.html"
+    }
+  ]
+}

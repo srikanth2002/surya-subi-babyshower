@@ -1,0 +1,12 @@
+node_modules
+.dist
+/dist
+.env
+.env.*
+!.env.example
+.DS_Store
+.vercel
+*.log
+
+# Uploaded music is supplied to the domain integrator privately
+public/music/surya-subi-babyshower-song.mp3

@@ -1,0 +1,1 @@
+export default function handler(req: { method?: string }, res: { status: (s:number) => {json: (b:unknown)=>void } }) { return res.status(503).json({ error: 'Private report setup pending. Please use the owner-only Google Sheet to view guest responses.' }) }
