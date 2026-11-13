@@ -11,7 +11,7 @@ type Report = { rsvps: RSVP[]; wishes: Wish[] }
 
 const date = new Date('2026-12-13T10:00:00+05:30')
 const invitePath = '/surya-subi-babyshower'
-const mapUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent('Lions Hall, Near Sai Baba Temple, Gokul Nagar, Hosur 635109') + '&travelmode=driving'
+const mapUrl = "https://maps.app.goo.gl/EDbAEvt7rkgwxW2y9?g_st=awb"
 const ready: SaveState = { kind: 'idle', message: '' }
 const srinumaNumber = (import.meta.env.VITE_SRINUMA_WHATSAPP_NUMBER || '').replace(/\D/g, '')
 const srinumaMessage = encodeURIComponent('Hi SRINUMA Digital Solutions! I saw the Surya & Subi baby shower digital invitation. I would like to enquire about a digital invitation.')
@@ -23,7 +23,7 @@ const content = {
     introKicker: 'A little miracle is on the way', introTitle: 'A Shower of Love', introSub: "Join us as we celebrate Subi's beautiful journey into motherhood.", open: 'Open Envelope',
     withLove: 'With immense love & blessings', occasion: 'Baby Shower', of: 'of', subtitle: 'A new chapter. A tiny heartbeat. A whole lot of love.',
     scroll: 'Scroll to discover', specialDay: 'A DATE TO CHERISH', together: 'Together, we celebrate', specialDaySub: "We can't wait to welcome our little bundle of joy — and we'd love for you to be there.",
-    date: 'Sunday, 13 December 2026', time: '10:00 AM onwards', venue: 'Lions Hall', address: 'Near Sai Baba Temple, Gokul Nagar, Hosur – 635109',
+    date: 'Sunday, 13 December 2026', time: '10:00 AM onwards', venue: 'Nakshatra Party Hall', address: 'Hosur, Tamil Nadu · Tap Get Directions for exact location',
     directions: 'Get Directions', countdown: 'Counting down to the celebration', days: 'Days', hours: 'Hours', mins: 'Mins', secs: 'Secs', begun: 'A day filled with blessings and beautiful memories!',
     attendanceEyebrow: 'YOUR PRESENCE MEANS THE WORLD', attendanceTitle: 'Will you join us?', attendanceSub: 'A little yes from you means a lot to us.',
     yourName: 'Your name', placeholderName: 'Enter your name', attending: 'Can you make it?', yes: "Joyfully accepting", no: 'Sending love from afar', guestCount: 'Number of guests (including you)', submitRSVP: 'Send RSVP',
@@ -39,7 +39,7 @@ const content = {
     introKicker: 'ஒரு குட்டி மகிழ்ச்சி வரவிருக்கிறது', introTitle: 'அன்பின் கொண்டாட்டம்', introSub: 'சுபியின் தாய்மை பயணத்தை அன்புடன் கொண்டாட உங்களை அழைக்கிறோம்.', open: 'உறையைத் திறக்க',
     withLove: 'அன்பும் ஆசீர்வாதங்களும் நிறைந்து', occasion: 'வளைகாப்பு விழா', of: '', subtitle: 'புதிய அத்தியாயம். குட்டி இதயத் துடிப்பு. எல்லையில்லா அன்பு.',
     scroll: 'கீழே பாருங்கள்', specialDay: 'மறக்க முடியாத நாள்', together: 'ஒன்றாகக் கொண்டாடுவோம்', specialDaySub: 'எங்கள் குட்டி மகிழ்ச்சியை வரவேற்கும் விழாவில் நீங்கள் கலந்து கொள்ள வேண்டும்.',
-    date: 'ஞாயிற்றுக்கிழமை, 13 டிசம்பர் 2026', time: 'காலை 10 மணி முதல்', venue: 'லயன்ஸ் ஹால்', address: 'சாய் பாபா கோவில் அருகில், கோகுல் நகர், ஓசூர் – 635109',
+    date: 'ஞாயிற்றுக்கிழமை, 13 டிசம்பர் 2026', time: 'காலை 10 மணி முதல்', venue: 'நட்சத்திரா பார்ட்டி ஹால்', address: 'ஓசூர், தமிழ்நாடு · சரியான இடத்திற்கு வழிகாட்டுதலைத் திறக்கவும்',
     directions: 'செல்லும் வழி', countdown: 'விழாவிற்கான கவுண்ட்டவுன்', days: 'நாட்கள்', hours: 'மணி', mins: 'நிமிடம்', secs: 'வினாடி', begun: 'அன்பும் ஆசிகளும் நிறைந்த இனிய நாள்!',
     attendanceEyebrow: 'உங்கள் வருகை எங்களுக்கு மகிழ்ச்சி', attendanceTitle: 'நீங்கள் வருகிறீர்களா?', attendanceSub: 'உங்கள் பதிலை அன்புடன் எதிர்பார்க்கிறோம்.',
     yourName: 'உங்கள் பெயர்', placeholderName: 'பெயரை உள்ளிடுங்கள்', attending: 'கலந்து கொள்ள முடியுமா?', yes: 'நிச்சயம் வருகிறேன்', no: 'தொலைவிலிருந்தே வாழ்த்துகிறேன்', guestCount: 'உங்களையும் சேர்த்து வருபவர்கள்', submitRSVP: 'வருகையைப் பதிவு செய்க',
@@ -328,7 +328,7 @@ export default function App() {
     catch { window.prompt('Copy invitation link', window.location.origin + invitePath) }
   }
   const share = async () => {
-    if (navigator.share) { try { await navigator.share({ title: "Subi's Baby Shower", text: 'Join us on 13 December 2026, 10 AM at Lions Hall, Hosur.', url: window.location.origin + invitePath }) } catch { /* canceled */ } }
+    if (navigator.share) { try { await navigator.share({ title: "Subi's Baby Shower", text: 'Join us on 13 December 2026, 10 AM at Nakshatra Party Hall.', url: window.location.origin + invitePath }) } catch { /* canceled */ } }
     else await copy()
   }
   const submitRSVP = async (event: FormEvent<HTMLFormElement>) => {
@@ -372,7 +372,7 @@ export default function App() {
               <span className="royal-card-line"/>
               <span className="royal-card-date">SUNDAY · 13 DECEMBER 2026</span>
               <span className="royal-card-time">10:00 AM</span>
-              <span className="royal-card-place">LIONS HALL · HOSUR</span>
+              <span className="royal-card-place">NAKSHATRA PARTY HALL</span>
               <span className="royal-card-ornament bottom">✧ &nbsp; ✿ &nbsp; ✧</span>
             </div>
           </div>
